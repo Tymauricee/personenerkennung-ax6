@@ -30,6 +30,8 @@ Dazu kommen **Shortcut-Kontrollen**:
 ## Schnellstart
 
 ```bash
+git clone https://github.com/Tymauricee/personenerkennung-ax6
+cd personenerkennung-ax6
 pip install -r requirements.txt          # Keras braucht EIN Backend: torch, tensorflow oder jax
 python -m pytest -q tests                # 13 Tests, u. a. Leakage-Freiheit aller Splits
 
@@ -169,6 +171,9 @@ docs/          split_schema.png (Poster-Abbildung)
 - Synthetische Demo-Daten testen nur den Code. Ihre Zahlen sind **keine** Befunde.
 
 ## Datenschutz
+
+> **Dieses Repository ist öffentlich.** Niemals Messdaten (auch keine `proc`-Dateien), zentrale Logs oder
+> trainierte Modelle committen. `data/`, `*.cwa` und Modelldateien stehen deshalb in der `.gitignore`.
 
 Gangdaten können als biometrische Daten gelten (DSGVO Art. 4 Nr. 14; bei Verarbeitung zur eindeutigen Identifizierung
 besondere Kategorie nach Art. 9). Deshalb gilt: nur pseudonymisierte IDs, keine Klarnamen in Code, Logs oder Grafiken,

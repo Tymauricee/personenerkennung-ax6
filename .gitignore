@@ -20,3 +20,10 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# ---- trainierte Identifikationsmodelle nicht veröffentlichen (Datenschutz/Ethik) ----
+*.pkl
+*.joblib
+*.keras
+*.h5
+*.pt
