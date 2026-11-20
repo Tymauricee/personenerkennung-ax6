@@ -116,7 +116,13 @@ def setup(cfg: dict, run_name: str | None = None) -> Ctx:
         except Exception:
             env[mod] = "nicht installiert"
     (out / "environment.json").write_text(json.dumps(env, indent=2))
-    return Ctx(cfg, recs, man, qc, log, out, FeatureStore(recs, recs[0].fs), rt, main_session)
+    ctx = Ctx(cfg, recs, man, qc, log, out, FeatureStore(recs, recs[0].fs), rt, main_session)
+    if (out / "summary.json").exists():  # Teil-Lauf (--only) ergänzt den vorhandenen Bericht
+        try:
+            ctx.report = json.loads((out / "summary.json").read_text())
+        except json.JSONDecodeError:
+            pass
+    return ctx
 
 
 def _row(res, extra=None):
@@ -443,8 +449,9 @@ def e7_stats(ctx: Ctx):
 
 # ----------------------------------------------------------------------------- E8
 def e8_importance(ctx: Ctx):
-    """Gruppierte Permutation Importance: alle Features einer Gruppe (Sensor x Familie)
-    werden gemeinsam über Testfenster permutiert; gemessen wird der Abfall der Clip-Accuracy."""
+    """Gruppierte Permutation Importance: alle Features einer Gruppe (Sensor x Familie) werden
+    gemeinsam über die Testfenster permutiert. Gemessen wird der Anstieg des Log-Loss auf
+    Fensterebene (empfindlicher als Accuracy, die bei ~100 % kaum reagiert)."""
     d = ctx.dir("E8_erklaerbarkeit")
     act = ctx.cfg["experiments"]["main_activity"]
     idx = ctx.idx(act)
@@ -455,7 +462,6 @@ def e8_importance(ctx: Ctx):
     rng = np.random.default_rng(ctx.cfg["seed"])
     n_rep = int(ctx.cfg["experiments"].get("E8_n_repeats", 5))
     rows, mdi = [], []
-    from .evaluate import aggregate
     for fo in folds:
         Wtr, Wte = fo.windows(ctx.recs, L, st)
         Xtr, names = ctx.store.get(Wtr, sensors, "extended")
@@ -466,34 +472,35 @@ def e8_importance(ctx: Ctx):
         meta = pd.DataFrame([feature_meta(n) for n in names])
         meta["group"] = meta["sensor"] + " · " + meta["family"]
         mdi.append(pd.Series(model.feature_importances_, index=names))
+        cls = {c: k for k, c in enumerate(model.classes_)}
+        yi = np.array([cls.get(y, -1) for y in yte])
+        ok = yi >= 0
 
-        def clip_acc(X):
-            lp = np.log(np.maximum(model.predict_proba(X), 1e-9))
-            agg = aggregate(Wte.unit, lp, model.classes_)
-            truth = pd.Series(yte, index=Wte.unit).groupby(level=0).first()
-            return float((agg["pred"].to_numpy() == agg["unit"].map(truth).to_numpy()).mean())
+        def logloss(X):
+            P = np.clip(model.predict_proba(X), 1e-6, 1)
+            return float(-np.mean(np.log(P[np.arange(len(P))[ok], yi[ok]])))
 
-        base = clip_acc(Xte)
+        base = logloss(Xte)
         for g, cols in meta.groupby("group").indices.items():
-            drops = []
+            rises = []
             for _ in range(n_rep):
                 Xp = Xte.copy()
-                perm = rng.permutation(len(Xp))
-                Xp[:, cols] = Xp[perm][:, cols]
-                drops.append(base - clip_acc(Xp))
+                Xp[:, cols] = Xte[rng.permutation(len(Xte))][:, cols]
+                rises.append(logloss(Xp) - base)
             rows.append({"fold": fo.name, "group": g, "sensor": meta.loc[cols[0], "sensor"],
-                         "family": meta.loc[cols[0], "family"], "drop": float(np.mean(drops))})
-    imp = pd.DataFrame(rows).groupby(["group", "sensor", "family"])["drop"].agg(["mean", "std"]).reset_index()
+                         "family": meta.loc[cols[0], "family"], "rise": float(np.mean(rises))})
+    imp = pd.DataFrame(rows).groupby(["group", "sensor", "family"])["rise"].agg(["mean", "std"]).reset_index()
     imp = imp.rename(columns={"mean": "importance", "std": "importance_sd", "group": "feature"})
     imp = imp.sort_values("importance", ascending=False)
     imp.to_csv(d / "E8_group_importance.csv", index=False)
-    plots.importance(imp, d / "E8_group_importance.png", top=16,
-                     title="Welche Sensor-/Merkmalsgruppen tragen die Identität? (Gehen, RF)")
+    plots.importance(imp, d / "E8_group_importance.png", top=16, xlabel="Anstieg des Log-Loss bei Permutation (Fensterebene)",
+                     title=f"Welche Sensor- und Merkmalsgruppen tragen die Identität? ({act}, RF)")
     mdi = pd.concat(mdi, axis=1).mean(1).sort_values(ascending=False)
     top = mdi.head(20).rename("importance").reset_index().rename(columns={"index": "feature"})
     top["sensor"] = [feature_meta(f)["sensor"] for f in top["feature"]]
     top.to_csv(d / "E8_top20_mdi.csv", index=False)
-    plots.importance(top, d / "E8_top20_mdi.png", top=20, title="Top-20 Einzelfeatures (RF, Gini-Importance)")
+    plots.importance(top, d / "E8_top20_mdi.png", top=20, xlabel="Gini-Importance (Mittel über Folds)",
+                     title="Top-20 Einzelfeatures (Random Forest)")
     ctx.report["E8"] = imp.head(10).round(4).to_dict("records")
 
 
@@ -536,10 +543,10 @@ def write_report(ctx: Ctx):
                      f"(95. Perzentil {r['null_p95']:.1%}), p = {r['p_value']:.3f}")
         L.append("")
     if "E2" in rep:
-        mat = pd.DataFrame(rep["E2"]["matrix"])
+        mat = pd.DataFrame(rep["E2"]["matrix"]).rename_axis("Sensoren")
         L += ["## E2 Sensorposition (Clip-Accuracy, RF)", "", _md(mat.map(lambda v: f"{v:.0%}"), index=True), ""]
     if "E3" in rep:
-        per = pd.DataFrame(rep["E3"]["per_activity"]).set_index("activity")
+        per = pd.DataFrame(rep["E3"]["per_activity"]).set_index("activity").rename_axis("Aktivität")
         lo = pd.DataFrame(rep["E3"]["loao"]).pivot(index="activity", columns="feature_set", values="pooled_unit_acc")
         per["LOAO invariant"] = lo.get("invariant")
         L += ["## E3 Aktivitäten (Clip-Accuracy, RF)", "", _md(per.map(lambda v: f"{v:.0%}"), index=True), ""]
@@ -557,7 +564,7 @@ def write_report(ctx: Ctx):
         L += ["## E6 Shortcut-Diagnostik (Clip-Accuracy, RF)", "", _md(e6.map(lambda v: f"{v:.0%}"), index=True), ""]
     if "E8" in rep:
         L += ["## E8 Wichtigste Merkmalsgruppen (Gehen, RF)", ""]
-        L += [f"- {r['feature']}: Accuracy-Abfall {r['importance']:.3f}" for r in rep["E8"][:6]]
+        L += [f"- {r['feature']}: Log-Loss-Anstieg {r['importance']:.3f}" for r in rep["E8"][:6]]
         L.append("")
     L += ["---", "Hinweis: Alle Zahlen gelten nur für die verwendeten Daten. Bei synthetischen Daten sind sie "
           "KEINE Ergebnisse, sondern ein Funktionstest der Pipeline."]

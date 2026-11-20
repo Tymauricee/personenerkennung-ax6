@@ -1,0 +1,22 @@
+feature,sensor,family,importance,importance_sd
+S05 · Lage/Ausrichtung (Achsenwerte),S05,Lage/Ausrichtung (Achsenwerte),0.4253861284802567,0.016033388073017716
+S01 · Lage/Ausrichtung (Achsenwerte),S01,Lage/Ausrichtung (Achsenwerte),0.3925771734425152,0.01585559619991004
+S02 · Lage/Ausrichtung (Achsenwerte),S02,Lage/Ausrichtung (Achsenwerte),0.3691930223451058,0.020977326620043913
+S06 · Lage/Ausrichtung (Achsenwerte),S06,Lage/Ausrichtung (Achsenwerte),0.1959918175716044,0.00462727257024817
+S05 · Statistik,S05,Statistik,0.12644756148131822,0.005922682151715503
+S02 · Spektrum,S02,Spektrum,0.10208247039224576,0.004155114311122004
+S06 · Spektrum,S06,Spektrum,0.08516614803792198,0.004938769019828421
+S02 · Statistik,S02,Statistik,0.08031943298326918,0.005976321189302727
+S01 · Statistik,S01,Statistik,0.07724359549892144,0.005796528676427049
+S01 · Spektrum,S01,Spektrum,0.07652650681369437,0.004499286148962486
+S05 · Spektrum,S05,Spektrum,0.06298719401778152,0.003807992433659534
+S06 · Statistik,S06,Statistik,0.04266926663050646,0.0031601246348286183
+S06 · Koordination (Korrelation),S06,Koordination (Korrelation),0.02003419972136324,0.003748304292427921
+S05 · Gang-Autokorrelation,S05,Gang-Autokorrelation,0.015332417785956676,0.0022758267530092547
+S02 · Gang-Autokorrelation,S02,Gang-Autokorrelation,0.013623474105327684,0.0022967272033751654
+S06 · Gang-Autokorrelation,S06,Gang-Autokorrelation,0.013326773411004467,0.0026887151377602034
+S01 · Koordination (Korrelation),S01,Koordination (Korrelation),0.012239666593372342,0.0018122346280869002
+S02 · Koordination (Korrelation),S02,Koordination (Korrelation),0.011253037564027473,0.0015992359620313735
+S01 · Gang-Autokorrelation,S01,Gang-Autokorrelation,0.010804368998999274,0.0014958986878447558
+mehrere · Koordination (Korrelation),mehrere,Koordination (Korrelation),0.005354213371368035,0.0009841967972453595
+S05 · Koordination (Korrelation),S05,Koordination (Korrelation),0.004182785313985744,0.0007653151253464966

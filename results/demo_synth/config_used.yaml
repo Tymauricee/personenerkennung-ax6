@@ -1,0 +1,103 @@
+seed: 42
+n_jobs: -1
+data:
+  manifest: /home/claude/personid-har/data_synth/manifest_clips.csv
+  cache_dir: /home/claude/personid-har/cache
+  fs: 50.0
+  sensors:
+  - S01
+  - S02
+  - S05
+  - S06
+  positions:
+    S01: Handgelenk rechts
+    S02: Handgelenk links
+    S05: Rumpf
+    S06: Bein
+  channels:
+  - acc_x
+  - acc_y
+  - acc_z
+  - gyr_x
+  - gyr_y
+  - gyr_z
+  time_unit: s
+  column_map: {}
+  max_gap_s: 0.1
+  trim_s: 0.0
+  require_all_sensors: true
+  acc_range_g: 16.0
+  gyr_range_dps: 2000.0
+windows:
+  length_s: 3.0
+  step_s: 1.5
+  gap_s: 3.0
+split:
+  primary: auto
+  n_blocks: 5
+  max_folds: 6
+  random_folds: 5
+  gap_clips: 0
+features:
+  default_set: extended
+models:
+  rf:
+    n_estimators: 500
+  svm:
+    C: 10.0
+  knn:
+    n_neighbors: 5
+  minirocket:
+    n_kernels: 10000
+  cnn:
+    epochs: 60
+    batch_size: 64
+    patience: 10
+    rot_deg: 15.0
+    width: 64
+    dropout: 0.3
+    lr: 0.001
+aggregation: mean_log
+experiments:
+  main_activity: Gehen
+  activities: null
+  E1_models:
+  - majority
+  - stratified
+  - dt
+  - knn
+  - svm
+  - rf
+  - minirocket
+  - cnn
+  E2_model: rf
+  E2_sensor_sets:
+    S01 (re. Hand):
+    - S01
+    S02 (li. Hand):
+    - S02
+    S05 (Rumpf):
+    - S05
+    S06 (Bein):
+    - S06
+    Hände (S01+S02):
+    - S01
+    - S02
+    Rumpf+Bein (S05+S06):
+    - S05
+    - S06
+    Alle 4:
+    - S01
+    - S02
+    - S05
+    - S06
+  E4_window_lengths:
+  - 1.0
+  - 2.0
+  - 3.0
+  - 4.0
+  - 6.0
+  E7_n_permutations: 50
+  E7_n_bootstrap: 2000
+  E8_n_repeats: 5
+results_dir: /home/claude/personid-har/results

@@ -1,0 +1,4 @@
+fold,protocol,n_train_win,n_test_win,n_test_units,trials_in_both,overlapping_pairs,min_gap_s,ok
+rw1,random_windows,416,209,109,25,224,-1.5,False
+rw2,random_windows,417,208,107,25,238,-1.5,False
+rw3,random_windows,417,208,110,25,242,-1.5,False

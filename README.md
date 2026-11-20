@@ -1,6 +1,6 @@
 # Personenerkennung aus Wearable-Bewegungsdaten (AX6, 4 Sensoren)
 
-**PF 1.5 Digital Health – Data Science & AI Project · HSD**
+**PF 1.5 Digital Health – Data Science & AI Project · HSD** · Forschungsdesign: [`docs/FORSCHUNGSDESIGN.md`](docs/FORSCHUNGSDESIGN.md)
 
 Aufgabe: Ein Modell bekommt einen **Clip** einer Aktivität (z. B. Gehen, 4 IMUs: S01 rechte Hand,
 S02 linke Hand, S05 Rumpf, S06 Bein) und sagt, **welche der N bekannten Personen** ihn aufgenommen

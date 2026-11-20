@@ -196,11 +196,11 @@ def grouped_bars(df: pd.DataFrame, cat: str, group: str, value: str, path, title
     ax.set_title(title, loc="left")
     ax.set_ylabel(ylabel)
     if note:
-        fig.text(0.01, -0.01 - 0.045 * n_lines, note, fontsize=8, color=MUTED, ha="left", va="top")
+        fig.text(0.01, -0.01 - 0.035 * n_lines, note, fontsize=8, color=MUTED, ha="left", va="top")
     _save(fig, path)
 
 
-def importance(df: pd.DataFrame, path, title="", top=20):
+def importance(df: pd.DataFrame, path, title="", top=20, xlabel="Importance"):
     d = df.head(top).iloc[::-1]
     fig, ax = plt.subplots(figsize=(7.6, 0.3 * len(d) + 1.4))
     order = [s for s in dict.fromkeys(df["sensor"]) if s != "mehrere"]
@@ -212,7 +212,7 @@ def importance(df: pd.DataFrame, path, title="", top=20):
     ax.set_yticks(range(len(d)), d["feature"], fontsize=8)
     ax.grid(axis="x")
     ax.set_axisbelow(True)
-    ax.set_xlabel("Abfall der Clip-Accuracy bei Permutation")
+    ax.set_xlabel(xlabel)
     shown = [s for s in cmap if s in set(d["sensor"])]
     handles = [plt.Rectangle((0, 0), 1, 1, color=cmap[s]) for s in shown]
     labels = shown
