@@ -142,3 +142,55 @@ def test_features_without_gyro():
     for fs_name in ("basic", "extended", "invariant", "static"):
         F, names = compute_features(W, ch, FS, fs_name)
         assert F.shape[0] == 3 and np.isfinite(F).all() and not any("gyr" in n for n in names)
+
+
+def test_naming_convention_manifest_and_split_files(tmp_path):
+    """Kurs-Namenskonvention: Datum=Session, Position=Sensor, getrennte acc/gyr-Dateien werden zusammengeführt."""
+    import pandas as pd
+    from personid.convention import manifest_from_convention, parse_name
+    from personid.synth import generate_dataset
+    src = tmp_path / "src"
+    generate_dataset(src, n_persons=2, retest_persons=1, durations={"Gehen": 25, "Squats": 20}, verbose=False,
+                     quirks=False)
+    man = pd.read_csv(src / "manifest.csv")
+    pos = {"S01": "wrist-right", "S02": "wrist-left", "S05": "hip", "S06": "ankle-right"}
+    act = {"Gehen": "walking", "Squats": "squats"}
+    raw = tmp_path / "data" / "processed"
+    raw.mkdir(parents=True)
+    for _, r in man.iterrows():
+        date = "20261117" if r["session"] == "S1" else "20261124"
+        tid = f"{date}_{r['person']}_HAR-{act[r['activity']]}_T01"
+        df = pd.read_csv(src / r["path"])
+        if r["sensor"] == "S02":  # wie Mbient: acc und gyr getrennt, eigene Spaltennamen, Zeit in ms
+            base = {"epoch (ms)": (df["time_s"] * 1000).round(3)}
+            pd.DataFrame({**base, "x-axis (g)": df["acc_x"], "y-axis (g)": df["acc_y"], "z-axis (g)": df["acc_z"]}).to_csv(
+                raw / f"{tid}_mbient-{pos['S02']}_acc_proc.csv", index=False)
+            pd.DataFrame({**base, "x-axis (deg/s)": df["gyr_x"], "y-axis (deg/s)": df["gyr_y"],
+                          "z-axis (deg/s)": df["gyr_z"]}).to_csv(raw / f"{tid}_mbient-{pos['S02']}_gyr_proc.csv", index=False)
+        else:
+            df.to_csv(raw / f"{tid}_ax6-{pos[r['sensor']]}_imu_proc.csv", index=False)
+    (raw / "notes.csv").write_text("x\n1\n")  # fremde Datei wird ignoriert
+    assert parse_name("20261117_P03_HAR-jumping-jacks_T02_ax6-wrist-left2_imu_raw.csv")["position"] == "wrist-left2"
+    log = pd.DataFrame({"file_name": [f.name.replace("_proc", "_raw") for f in sorted(raw.glob("2026*.csv"))],
+                        "sensor_id": [f"AX6-{k:02d}" for k in range(len(list(raw.glob('2026*.csv'))))],
+                        "validity": "valid"})
+    bad = log["file_name"].str.contains("P02_HAR-squats") & log["file_name"].str.contains("hip")
+    log.loc[bad, "validity"] = "invalid"
+    log.to_csv(tmp_path / "log.csv", index=False)
+    m = manifest_from_convention(tmp_path / "data", log_csv=tmp_path / "log.csv")
+    assert set(m["session"]) == {"20261117", "20261124"}
+    assert set(m["sensor"]) == {"wrist-right", "wrist-left", "hip", "ankle-right"}
+    assert (m["device_id"] != "").all() and not (m["person"].eq("P02") & m["activity"].eq("squats") & m["sensor"].eq("hip")).any()
+    m.to_csv(tmp_path / "manifest.csv", index=False)
+    cfg = {"fs": 50.0, "sensors": "auto", "trim_s": 0.0, "max_gap_s": 0.1, "time_unit": "auto",
+           "cache_dir": str(tmp_path / "cache")}
+    recs, qc, logdf = load_recordings(load_manifest(tmp_path / "manifest.csv"), cfg, use_cache=False, verbose=False)
+    # P01: walking (2 Tage) + squats; P02: walking (squats ungültig -> fehlt hip -> verworfen)
+    assert sorted((r.person, r.session, r.activity) for r in recs) == [
+        ("P01", "20261117", "squats"), ("P01", "20261117", "walking"), ("P01", "20261124", "walking"),
+        ("P02", "20261117", "walking")]
+    r = recs[0]
+    assert r.X.shape[1] == 24 and "wrist-left_gyr_z" in r.channels and r.sensors == sorted(pos.values())
+    gl = r.X[:, r.channels.index("wrist-left_gyr_x")]
+    assert np.nanstd(gl) > 1.0  # Gyro-Datei wurde wirklich gelesen (°/s)
+    assert abs(np.nanmedian(np.linalg.norm(r.X[:, [r.channels.index(f"wrist-left_acc_{a}") for a in "xyz"]], axis=1)) - 1) < 0.2

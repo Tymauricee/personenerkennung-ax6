@@ -203,15 +203,19 @@ def grouped_bars(df: pd.DataFrame, cat: str, group: str, value: str, path, title
 def importance(df: pd.DataFrame, path, title="", top=20):
     d = df.head(top).iloc[::-1]
     fig, ax = plt.subplots(figsize=(7.6, 0.3 * len(d) + 1.4))
-    cols = [SENSOR_COLORS.get(s, MUTED) for s in d["sensor"]]
+    order = [s for s in dict.fromkeys(df["sensor"]) if s != "mehrere"]
+    cmap = {s: SENSOR_COLORS.get(s, SERIES[k % len(SERIES)]) for k, s in enumerate(order)}
+    cmap["mehrere"] = MUTED
+    cols = [cmap.get(s, MUTED) for s in d["sensor"]]
     ax.barh(range(len(d)), d["importance"], xerr=d.get("importance_sd"), color=cols, height=0.65,
             edgecolor=SURFACE, linewidth=2, error_kw={"ecolor": INK2, "elinewidth": 0.8})
     ax.set_yticks(range(len(d)), d["feature"], fontsize=8)
     ax.grid(axis="x")
     ax.set_axisbelow(True)
     ax.set_xlabel("Abfall der Clip-Accuracy bei Permutation")
-    handles = [plt.Rectangle((0, 0), 1, 1, color=c) for s, c in SENSOR_COLORS.items() if s in set(d["sensor"])]
-    labels = [s for s in SENSOR_COLORS if s in set(d["sensor"])]
+    shown = [s for s in cmap if s in set(d["sensor"])]
+    handles = [plt.Rectangle((0, 0), 1, 1, color=cmap[s]) for s in shown]
+    labels = shown
     ax.legend(handles, labels, loc="lower right", title="Sensor")
     ax.set_title(title, loc="left")
     _save(fig, path)

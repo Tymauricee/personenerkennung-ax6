@@ -41,7 +41,7 @@ REQUIRED_MANIFEST_COLS = ["path", "person", "activity", "trial", "sensor"]
 # Regex auf "normalisierte" Spaltennamen (klein, nur a-z0-9). Präfix-Match, damit auch
 # Einheiten-Suffixe wie "Acc_X (g)" -> "accxg" erkannt werden.
 _COL_PATTERNS = {
-    "time": [r"^(time|timestamp|zeit|datetime|unixtime|timesec|times)", r"^t$"],
+    "time": [r"^(time|timestamp|zeit|datetime|unixtime|timesec|times|epoch|elapsed)", r"^t$"],
     "acc_x": [r"^(acc|accel|accelerometer|acceleration|a)x"],
     "acc_y": [r"^(acc|accel|accelerometer|acceleration|a)y"],
     "acc_z": [r"^(acc|accel|accelerometer|acceleration|a)z"],
@@ -113,10 +113,11 @@ def load_manifest(path: str | Path) -> pd.DataFrame:
     missing = [c for c in REQUIRED_MANIFEST_COLS if c not in df.columns]
     if missing:
         raise ValueError(f"Manifest {path} fehlen Spalten: {missing}")
-    for c, default in (("session", "S1"), ("clip", ""), ("device_id", ""), ("position", "")):
+    for c, default in (("session", "S1"), ("clip", ""), ("device_id", ""), ("position", ""), ("channel", "imu")):
         if c not in df.columns:
             df[c] = default
     df["session"] = df["session"].replace("", "S1")
+    df["channel"] = df["channel"].replace("", "imu").str.lower()
     for c in ("start_s", "end_s"):
         df[c] = pd.to_numeric(df[c], errors="coerce") if c in df.columns else np.nan
     base = path.resolve().parent
@@ -167,26 +168,29 @@ def build_manifest_from_pattern(root: str | Path, pattern: str,
 # --------------------------------------------------------------------------------------
 # Einzelne Sensordatei lesen
 # --------------------------------------------------------------------------------------
-def _map_columns(cols: list[str], column_map: dict | None) -> dict:
+def _map_columns(cols: list[str], column_map: dict | None, want: list[str] | None = None) -> dict:
     """Ordnet Datei-Spalten den kanonischen Namen zu. Rückgabe: {kanonisch: dateispalte}."""
+    want = list(want or CANONICAL)
     mapping = {}
     if column_map:
-        mapping.update({k: v for k, v in column_map.items() if v in cols})
+        mapping.update({k: v for k, v in column_map.items() if v in cols and (k == "time" or k in want)})
     normed = {c: _norm(c) for c in cols}
-    for canon, pats in _COL_PATTERNS.items():
-        if canon in mapping:
+    for canon in ["time"] + want:
+        if canon in mapping or canon not in _COL_PATTERNS:
             continue
         for c, n in normed.items():
             if c in mapping.values():
                 continue
-            if any(re.match(p, n) for p in pats):
+            if any(re.match(p, n) for p in _COL_PATTERNS[canon]):
                 mapping[canon] = c
                 break
-    for ax in "xyz":  # Fallback: AX-Exporte mit "x,y,z" (Accelerometer) ohne Präfix
-        if f"acc_{ax}" not in mapping:
-            cand = [c for c, n in normed.items() if n == ax and c not in mapping.values()]
+    kinds = {w.split("_")[0] for w in want}
+    kind = kinds.pop() if len(kinds) == 1 else "acc"
+    for ax in "xyz":  # Fallback: "x,y,z" bzw. "x-axis (g)" ohne Präfix (AX-/Mbient-Exporte)
+        if f"{kind}_{ax}" in want and f"{kind}_{ax}" not in mapping:
+            cand = [c for c, n in normed.items() if re.match(rf"^{ax}(axis)?([a-z]*)$", n) and c not in mapping.values()]
             if cand:
-                mapping[f"acc_{ax}"] = cand[0]
+                mapping[f"{kind}_{ax}"] = cand[0]
     return mapping
 
 
@@ -214,8 +218,16 @@ def _read_cwa(path: Path) -> pd.DataFrame:
         return cwa.get_samples()
 
 
-def read_sensor_file(path: str | Path, cfg_data: dict) -> tuple[np.ndarray, np.ndarray]:
-    """Liest eine Sensordatei. Rückgabe: (t [s], Y [n, 6] in g und °/s)."""
+def channels_for(kind: str, cfg_data: dict) -> list[str]:
+    """Welche kanonischen Kanäle eine Datei enthält: imu = alle, acc bzw. gyr = nur diese."""
+    chans = list(cfg_data.get("channels", CANONICAL))
+    if kind in ("acc", "gyr"):
+        return [c for c in chans if c.startswith(kind)]
+    return chans
+
+
+def read_sensor_file(path: str | Path, cfg_data: dict, channels: list[str] | None = None):
+    """Liest eine Sensordatei. Rückgabe: (t [s], Y [n, k] in g bzw. °/s, Kanalnamen)."""
     path = Path(path)
     suf = path.suffix.lower()
     unit = cfg_data.get("time_unit", "s")
@@ -228,19 +240,20 @@ def read_sensor_file(path: str | Path, cfg_data: dict) -> tuple[np.ndarray, np.n
         df = pd.read_csv(path, sep=None, engine="python")
     else:
         df = pd.read_csv(path)
-    mapping = _map_columns(list(df.columns), cfg_data.get("column_map"))
-    chans = cfg_data.get("channels", CANONICAL)
+    chans = list(channels or cfg_data.get("channels", CANONICAL))
+    mapping = _map_columns(list(df.columns), cfg_data.get("column_map"), chans)
     miss = [c for c in ["time"] + chans if c not in mapping]
     if miss:
         raise ValueError(f"{path.name}: Spalten nicht erkannt: {miss}. Gefunden: {list(df.columns)}. "
                          f"-> data.column_map in der Config setzen.")
     t = _time_to_seconds(df[mapping["time"]], unit)
     Y = np.column_stack([pd.to_numeric(df[mapping[c]], errors="coerce").to_numpy(float) for c in chans])
-    if cfg_data.get("acc_unit", "g") in ("m/s2", "ms2", "m/s^2"):
-        Y[:, :3] /= 9.80665
-    if cfg_data.get("gyr_unit", "dps") in ("rad/s", "rads"):
-        Y[:, 3:6] = np.degrees(Y[:, 3:6])
-    return t, Y
+    for j, c in enumerate(chans):  # Einheiten vereinheitlichen -> g und °/s
+        if c.startswith("acc") and cfg_data.get("acc_unit", "g") in ("m/s2", "ms2", "m/s^2"):
+            Y[:, j] /= 9.80665
+        if c.startswith("gyr") and cfg_data.get("gyr_unit", "dps") in ("rad/s", "rads"):
+            Y[:, j] = np.degrees(Y[:, j])
+    return t, Y, chans
 
 
 def clean_time(t: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict]:
@@ -255,15 +268,15 @@ def clean_time(t: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray, di
     return t[keep], Y[keep], info
 
 
-def qc_stats(t: np.ndarray, Y: np.ndarray, cfg_data: dict) -> dict:
+def qc_stats(t: np.ndarray, Y: np.ndarray, cfg_data: dict, chans: list[str] | None = None) -> dict:
     """Qualitätskennzahlen einer Datei (vor Synchronisation)."""
+    chans = chans or CANONICAL[: Y.shape[1]]
+    ia = [j for j, c in enumerate(chans) if c.startswith("acc")]
+    ig = [j for j, c in enumerate(chans) if c.startswith("gyr")]
     dt = np.diff(t)
-    acc = Y[:, :3]
-    gyr = Y[:, 3:6] if Y.shape[1] >= 6 else np.zeros((len(Y), 3))
-    an = np.linalg.norm(acc, axis=1)
-    gyr_abs = np.abs(gyr)
     max_gap = float(cfg_data.get("max_gap_s", 0.1))
     s = {
+        "channels": "+".join(sorted({c.split("_")[0] for c in chans})),
         "n_samples": int(len(t)),
         "t_start": float(t[0]) if len(t) else np.nan,
         "duration_s": float(t[-1] - t[0]) if len(t) > 1 else 0.0,
@@ -272,22 +285,26 @@ def qc_stats(t: np.ndarray, Y: np.ndarray, cfg_data: dict) -> dict:
         "n_gaps": int((dt > max_gap).sum()),
         "max_gap_s": float(dt.max()) if len(dt) else np.nan,
         "pct_nan": float(np.isnan(Y).any(axis=1).mean() * 100),
-        "acc_norm_median_g": float(np.nanmedian(an)),
-        "acc_norm_p99_g": float(np.nanpercentile(an, 99)),
-        "gyr_abs_p99_dps": float(np.nanpercentile(gyr_abs, 99)),
-        "acc_clip_pct": float((np.abs(acc) >= 0.98 * cfg_data.get("acc_range_g", 16)).any(axis=1).mean() * 100),
-        "gyr_clip_pct": float((gyr_abs >= 0.98 * cfg_data.get("gyr_range_dps", 2000)).any(axis=1).mean() * 100),
     }
     flags = []
+    if ia:
+        acc = Y[:, ia]
+        an = np.linalg.norm(acc, axis=1)
+        s.update({"acc_norm_median_g": float(np.nanmedian(an)), "acc_norm_p99_g": float(np.nanpercentile(an, 99)),
+                  "acc_clip_pct": float((np.abs(acc) >= 0.98 * cfg_data.get("acc_range_g", 16)).any(axis=1).mean() * 100)})
+        if not 0.6 <= s["acc_norm_median_g"] <= 1.6:
+            flags.append("|acc| unplausibel (Einheit m/s²? Kalibrierung?)")
+    if ig:
+        gyr_abs = np.abs(Y[:, ig])
+        s.update({"gyr_abs_p99_dps": float(np.nanpercentile(gyr_abs, 99)),
+                  "gyr_clip_pct": float((gyr_abs >= 0.98 * cfg_data.get("gyr_range_dps", 2000)).any(axis=1).mean() * 100)})
+        if s["gyr_abs_p99_dps"] < 5 and s.get("acc_norm_p99_g", 2.0) > 1.3:
+            flags.append("Gyro sehr klein (rad/s statt °/s?)")
     if s["n_gaps"]:
-        flags.append(f"{s['n_gaps']} Lücke(n) > {max_gap}s (max {s['max_gap_s']:.2f}s)")
+        flags.insert(0, f"{s['n_gaps']} Lücke(n) > {max_gap}s (max {s['max_gap_s']:.2f}s)")
     if s["pct_nan"] > 0:
         flags.append("NaN-Werte")
-    if not 0.6 <= s["acc_norm_median_g"] <= 1.6:
-        flags.append("|acc| unplausibel (Einheit m/s²? Kalibrierung?)")
-    if s["gyr_abs_p99_dps"] < 5 and s["acc_norm_p99_g"] > 1.3:
-        flags.append("Gyro sehr klein (rad/s statt °/s?)")
-    if s["acc_clip_pct"] > 0.1 or s["gyr_clip_pct"] > 0.1:
+    if s.get("acc_clip_pct", 0) > 0.1 or s.get("gyr_clip_pct", 0) > 0.1:
         flags.append("Clipping (Messbereich zu klein?)")
     s["flags"] = "; ".join(flags)
     return s
@@ -371,6 +388,14 @@ def _infer_clip_times(recs: list["Recording"]) -> list[str]:
     return warnings
 
 
+def sensor_list(manifest: pd.DataFrame, cfg_data: dict) -> list[str]:
+    """Sensoren aus der Config – oder ``auto``: alle im Manifest vorkommenden (sortiert)."""
+    s = cfg_data.get("sensors", "auto")
+    if s in (None, "auto", "all") or s == ["auto"]:
+        return sorted(manifest["sensor"].unique())
+    return list(s)
+
+
 def load_recordings(manifest: pd.DataFrame, cfg_data: dict, use_cache: bool = True,
                     verbose: bool = True) -> tuple[list[Recording], pd.DataFrame, pd.DataFrame]:
     """Lädt alle Trials/Clips. Rückgabe: (recordings, qc_pro_datei, log)."""
@@ -384,10 +409,11 @@ def load_recordings(manifest: pd.DataFrame, cfg_data: dict, use_cache: bool = Tr
         return out
 
     fs = float(cfg_data["fs"])
-    sensors = list(cfg_data["sensors"])
+    sensors = sensor_list(manifest, cfg_data)
     channels = list(cfg_data.get("channels", CANONICAL))
     trim = int(round(cfg_data.get("trim_s", 0) * fs))
     max_gap = float(cfg_data.get("max_gap_s", 0.1))
+    kind_order = {"imu": 0, "acc": 1, "gyr": 2}
 
     # Pass 1: jede Datei genau einmal lesen + QC (Clips können dieselbe Datei referenzieren)
     files, qc_rows = {}, []
@@ -395,49 +421,57 @@ def load_recordings(manifest: pd.DataFrame, cfg_data: dict, use_cache: bool = Tr
     for path, row in first.iterrows():
         q = {"file": Path(path).name, "path": path, "person": row["person"], "session": row["session"],
              "activity": row["activity"], "trial": row["trial"], "sensor": row["sensor"],
-             "device_id": row.get("device_id", "")}
+             "channel": row.get("channel", "imu"), "device_id": row.get("device_id", "")}
         if not Path(path).exists():
             q["flags"] = "DATEI FEHLT"
         else:
             try:
-                t, Y = read_sensor_file(path, cfg_data)
+                t, Y, chans = read_sensor_file(path, cfg_data, channels_for(row.get("channel", "imu"), cfg_data))
                 t, Y, tinfo = clean_time(t, Y)
-                q.update(qc_stats(t, Y, cfg_data))
+                q.update(qc_stats(t, Y, cfg_data, chans))
                 q.update(tinfo)
                 if tinfo["n_dup_time"] or tinfo["n_nonmonotonic"]:
                     q["flags"] = (q["flags"] + "; " if q["flags"] else "") + \
                         f"Zeitstempel: {tinfo['n_dup_time']} doppelt, {tinfo['n_nonmonotonic']} rückwärts"
-                files[path] = (t, Y)
+                files[path] = (t, Y, chans)
             except Exception as e:  # kaputte Datei -> protokollieren, nicht abbrechen
                 q["flags"] = f"LESEFEHLER: {e}"
         qc_rows.append(q)
 
-    # Pass 2: pro Trial/Clip synchronisieren
+    # Pass 2: pro Trial/Clip alle Streams (Sensor x imu|acc|gyr) synchronisieren
     recs, log = [], []
     gcols = ["person", "session", "activity", "trial", "clip"]
     for (person, session, activity, trial, clip), g in manifest.groupby(gcols, sort=True):
         rec_id = "|".join([person, session, activity, trial] + ([clip] if clip else []))
-        streams, devices = {}, {}
-        for _, row in g.iterrows():
-            if row["sensor"] not in sensors or row["path"] not in files:
+        streams, devices, have = {}, {}, {}
+        rows = sorted(g.to_dict("records"), key=lambda r: (sensors.index(r["sensor"]) if r["sensor"] in sensors else 99,
+                                                           kind_order.get(r.get("channel", "imu"), 9)))
+        for row in rows:
+            sen = row["sensor"]
+            if sen not in sensors or row["path"] not in files:
                 continue
-            t, Y = files[row["path"]]
-            if pd.notna(row["start_s"]) or pd.notna(row["end_s"]):
-                lo = row["start_s"] if pd.notna(row["start_s"]) else -np.inf
-                hi = row["end_s"] if pd.notna(row["end_s"]) else np.inf
+            t, Y, chans = files[row["path"]]
+            new_ch = [c for c in chans if c not in have.get(sen, set())]
+            if not new_ch:          # z. B. imu-Datei UND getrennte acc/gyr-Dateien: imu gewinnt
+                continue
+            cols = [chans.index(c) for c in new_ch]
+            if pd.notna(row.get("start_s")) or pd.notna(row.get("end_s")):
+                lo = row["start_s"] if pd.notna(row.get("start_s")) else -np.inf
+                hi = row["end_s"] if pd.notna(row.get("end_s")) else np.inf
                 sel = (t >= lo) & (t < hi)
                 t, Y = t[sel], Y[sel]
             if len(t) < 10:
                 continue
-            streams[row["sensor"]] = (t, Y)
-            devices[row["sensor"]] = row.get("device_id", "")
-        missing = [s for s in sensors if s not in streams]
+            streams[f"{sen}|{row.get('channel', 'imu')}"] = (t, Y[:, cols], new_ch, sen)
+            have.setdefault(sen, set()).update(new_ch)
+            devices[sen] = row.get("device_id", "")
+        missing = [f"{s} ({', '.join(c for c in channels if c not in have.get(s, set()))})"
+                   for s in sensors if not set(channels) <= have.get(s, set())]
         if missing and (cfg_data.get("require_all_sensors", True) or not streams):
-            log.append({"rec_id": rec_id, "reason": f"Sensor(en) fehlen/unlesbar: {missing}"})
+            log.append({"rec_id": rec_id, "reason": f"Sensor(en)/Kanäle fehlen oder unlesbar: {missing}"})
             continue
         try:
-            ordered = {s: streams[s] for s in sensors if s in streams}
-            grid, X, sinfo = synchronize(ordered, fs, max_gap)
+            grid, X, sinfo = synchronize({k: (v[0], v[1]) for k, v in streams.items()}, fs, max_gap)
         except ValueError as e:
             log.append({"rec_id": rec_id, "reason": f"Synchronisation: {e}"})
             continue
@@ -445,7 +479,7 @@ def load_recordings(manifest: pd.DataFrame, cfg_data: dict, use_cache: bool = Tr
         if trim and X.shape[0] > 2 * trim + 1:
             X = X[trim:-trim]
             t0 += trim / fs
-        chans = [f"{s}_{c}" for s in ordered for c in channels]
+        chans = [f"{v[3]}_{c}" for v in streams.values() for c in v[2]]
         recs.append(Recording(rec_id, str(person), str(session), str(activity), str(trial), fs, chans, X,
                               clip=str(clip), t0=t0,
                               meta={"devices": devices, "sync": sinfo,

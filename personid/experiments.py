@@ -95,6 +95,9 @@ def setup(cfg: dict, run_name: str | None = None) -> Ctx:
     save_config(cfg, out / "config_used.yaml")
     man = load_manifest(cfg["data"]["manifest"])
     recs, qc, log = load_recordings(man, cfg["data"])
+    if recs and cfg["data"].get("sensors") in (None, "auto", "all", ["auto"]):
+        cfg["data"]["sensors"] = recs[0].sensors  # tatsächliche Sensornamen für alle Experimente
+        save_config(cfg, out / "config_used.yaml")
     rt = recordings_table(recs)
     if rt.empty:
         raise ValueError("Keine Recordings geladen – Manifest/Spalten prüfen (siehe load_log und qc_files).")
@@ -199,29 +202,45 @@ def e1_models(ctx: Ctx):
 
 
 # ----------------------------------------------------------------------------- E2 + E3a
+def _sensor_sets(ctx: Ctx) -> dict:
+    """Sensorkombinationen aus der Config; passen die Namen nicht zu den Daten, automatisch:
+    jeder Sensor einzeln, beide Handgelenke (falls vorhanden), alle zusammen (immer zuletzt)."""
+    avail = list(ctx.cfg["data"]["sensors"])
+    sets = ctx.cfg["experiments"].get("E2_sensor_sets") or {}
+    if sets and all(set(v) <= set(avail) for v in sets.values()):
+        return sets
+    auto = {s: [s] for s in avail}
+    wrists = [s for s in avail if "wrist" in s or "hand" in s.lower()]
+    if len(wrists) >= 2:
+        auto["Handgelenke"] = wrists
+    auto[f"Alle {len(avail)}"] = avail
+    return auto
+
+
 def e2_sensors(ctx: Ctx):
     d = ctx.dir("E2_sensorposition")
     cfg2 = json.loads(json.dumps(ctx.cfg))
     cfg2["models"]["rf"]["n_estimators"] = min(300, cfg2["models"]["rf"]["n_estimators"])
     model = ctx.cfg["experiments"]["E2_model"]
+    sets = _sensor_sets(ctx)
     rows = []
     for act in ctx.activities():
         idx = ctx.idx(act)
         folds = ctx.primary(idx)
-        for set_name, sensors in ctx.cfg["experiments"]["E2_sensor_sets"].items():
+        for set_name, sensors in sets.items():
             res = run_cv(ctx.recs, folds, model, cfg2, sensors=sensors, store=ctx.store, name=set_name)
             rows.append(_row(res, {"activity": act, "sensor_set": set_name}))
         print(f"[E2] {act} fertig")
     df = pd.DataFrame(rows)
     df.to_csv(d / "E2_sensors.csv", index=False)
     mat = df.pivot(index="sensor_set", columns="activity", values="pooled_unit_acc")
-    mat = mat.reindex(index=list(ctx.cfg["experiments"]["E2_sensor_sets"]), columns=ctx.activities())
+    mat = mat.reindex(index=list(sets), columns=ctx.activities())
     lo = float(np.nanmin(mat.to_numpy(dtype=float)))
     vmin = np.floor(lo * 10) / 10 if lo > 0.5 else 0.0  # Farbskala an den Wertebereich anpassen (Skala steht dran)
     plots.heatmap(mat, d / "E2_sensor_x_activity.png", title="Clip-Accuracy nach Sensorposition und Aktivität",
                   cbar_label=f"Clip-Accuracy (Farbskala ab {vmin:.0%})", vmin=vmin)
     ctx.report["E2"] = {"matrix": mat.round(3).to_dict()}
-    allrow = df[df["sensor_set"] == list(ctx.cfg["experiments"]["E2_sensor_sets"])[-1]]
+    allrow = df[df["sensor_set"] == list(sets)[-1]]
     ctx.results["E3:per_activity"] = allrow
 
 

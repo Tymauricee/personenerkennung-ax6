@@ -31,7 +31,7 @@ Dazu kommen **Shortcut-Kontrollen**:
 
 ```bash
 pip install -r requirements.txt          # Keras braucht EIN Backend: torch, tensorflow oder jax
-python -m pytest -q tests                # 12 Tests, u. a. Leakage-Freiheit aller Splits
+python -m pytest -q tests                # 13 Tests, u. a. Leakage-Freiheit aller Splits
 
 # Demo mit synthetischen Daten (gleiche Struktur wie euer Datensatz, KEINE echten Ergebnisse!)
 python scripts/make_synthetic_data.py --out data_synth
@@ -44,22 +44,37 @@ Ergebnisse landen unter `results/<lauf>/`: pro Experiment CSV und PNG, dazu `REP
 
 ## Eigene Daten anbinden (3 Schritte)
 
-**1. Manifest erstellen.** Eine CSV mit einer Zeile pro (Clip bzw. Trial) × Sensor:
+**1. Manifest erstellen.** Liegen eure Dateien nach der **Namenskonvention des Kurs-Repos** vor
+(`20261117_P03_HAR-walking_T01_ax6-ankle-right_imu_proc.csv`, siehe `docs/naming_convention.md` im Repo
+ZDDduesseldorf/human_activity_recognition_zdd2026), reicht ein Befehl:
+
+```bash
+python scripts/build_manifest.py --convention --root data --out data/manifest.csv \
+    --stage proc --devices ax6 --log data/metadata/<zentrales_log>.csv
+```
+
+- **Datum → Session.** Nehmt ihr Personen an einem zweiten Tag erneut auf, entsteht automatisch der Cross-Session-Test.
+- **Position → Sensor-Name** (`wrist-right`, `hip`, …). Getrennte `acc`- und `gyr`-Dateien (z. B. Mbient) werden beim Laden zusammengeführt.
+- **`--log`** übernimmt die Sensor-ID (Seriennummer → `device_id`, für den Geräte-Check) und schließt Trials aus,
+  die im Log als ungültig markiert sind.
+
+Für jedes andere Schema schreibt ihr eine CSV mit einer Zeile pro (Trial bzw. Clip) × Sensor
+(oder ihr baut sie mit `--pattern`, Regex-Beispiel in `scripts/build_manifest.py`):
 
 ```
-path,person,session,activity,trial,sensor,clip,start_s,end_s,device_id
-data/P01/Gehen/S01.csv,P01,S1,Gehen,T1,S01,C01,0.0,10.0,AX6-03
-data/P01/Gehen/S01.csv,P01,S1,Gehen,T1,S01,C02,10.0,20.0,AX6-03
+path,person,session,activity,trial,sensor,channel,clip,start_s,end_s,device_id
+data/P01_walking_S01.csv,P01,S1,walking,T1,S01,imu,C01,0.0,10.0,AX6-03
+data/P01_walking_S01.csv,P01,S1,walking,T1,S01,imu,C02,10.0,20.0,AX6-03
 ...
 ```
 
-- `clip`, `start_s` und `end_s` sind optional. Sind eure Clips **eigene Dateien**, lasst `start_s`/`end_s` weg.
+- `channel`, `clip`, `start_s` und `end_s` sind optional. Sind eure Clips **eigene Dateien**, lasst `start_s`/`end_s` weg.
   Schneidet ihr Clips aus einer längeren Datei, tragt die Grenzen in deren Zeitbasis ein.
 - **`device_id` unbedingt ausfüllen.** Daraus prüft E0, ob Geräte mit Personen konfundiert sind (siehe unten).
-- Bei einem Namensschema erzeugt `scripts/build_manifest.py` das Manifest automatisch (Regex-Beispiele im Skript).
 
 **2. Config anpassen:** `configs/ax6_beta.yaml` kopieren und alle `TODO` prüfen
-(Zeiteinheit, Einheiten g vs. m/s² und °/s vs. rad/s, Spaltennamen, Messbereich, Aktivitätsname).
+(Einheiten g vs. m/s² und °/s vs. rad/s, Spaltennamen, Messbereich). Voreingestellt sind `sensors: auto`
+(alle Positionen aus dem Manifest) und `main_activity: walking`.
 Spalten werden automatisch erkannt (`time`, `acc_x` … `gyr_z`, auch `Accel-X (g)`, `gx` u. ä.).
 Falls nicht, hilft `data.column_map`.
 
@@ -137,11 +152,13 @@ für die Split-Logik. Hinweis: Einige Abschnitte nutzen parallele Bäume (`n_job
 ## Projektstruktur
 
 ```
-personid/      io.py · synth.py · inventory.py · windows.py · splits.py · features.py · models.py
-               evaluate.py · plots.py · experiments.py · config.py
+personid/      io.py · convention.py · synth.py · inventory.py · windows.py · splits.py · features.py
+               models.py · evaluate.py · plots.py · experiments.py · config.py
 configs/       synth.yaml (Demo) · ax6_beta.yaml (Vorlage für eure Daten)
 scripts/       make_synthetic_data.py · build_manifest.py · run_experiments.py
-tests/         test_core.py
+tests/         test_core.py (13 Tests, laufen per GitHub Actions bei jedem Push)
+results/       demo_synth/ – kompletter Beispiellauf auf synthetischen Daten (REPORT.md + Abbildungen)
+docs/          split_schema.png (Poster-Abbildung)
 ```
 
 ## Grenzen (ins Poster schreiben)
