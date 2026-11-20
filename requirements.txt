@@ -1,0 +1,16 @@
+# Kern
+numpy>=1.26
+scipy>=1.11
+pandas>=2.1
+scikit-learn>=1.4
+matplotlib>=3.8
+pyyaml>=6.0
+# MiniRocket (Dempster et al. 2021)
+aeon>=1.0
+# 1D-CNN: Keras 3 + EIN Backend nach Wahl (torch ODER tensorflow ODER jax)
+keras>=3.0
+torch>=2.2            # alternativ: tensorflow>=2.16  oder  jax[cpu]
+# Tests
+pytest>=8
+# Optional: AX6-Rohdateien (.cwa) direkt lesen
+# openmovement @ git+https://github.com/digitalinteraction/openmovement-python.git@master

@@ -1,0 +1,22 @@
+# ---- Messdaten NIE committen: pseudonymisiert, aber personenbezogen (ggf. biometrisch) ----
+data/
+*.cwa
+*.cwa.gz
+data_synth/
+
+# ---- erzeugte Dateien ----
+cache/
+results/*
+!results/demo_synth/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ---- Umgebung ----
+.venv/
+venv/
+.env
+.DS_Store
+.idea/
+.vscode/

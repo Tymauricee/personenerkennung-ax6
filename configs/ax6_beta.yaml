@@ -1,0 +1,29 @@
+# Vorlage für EUREN AX6-Beta-Datensatz. Alles mit TODO prüfen/anpassen.
+seed: 42
+n_jobs: -1
+data:
+  manifest: data/manifest.csv     # TODO: Pfad zu eurem Manifest (siehe README, Abschnitt "Eigene Daten")
+  cache_dir: cache
+  fs: 50.0                        # Ziel-Samplingrate; AX6 nimmt z. B. mit 100 Hz auf -> wird gefiltert + resampelt
+  sensors: [S01, S02, S05, S06]   # S01 re. Hand, S02 li. Hand, S05 Rumpf, S06 Bein
+  channels: [acc_x, acc_y, acc_z, gyr_x, gyr_y, gyr_z]
+  time_unit: s                    # TODO: s | ms | us | ns | datetime | auto
+  acc_unit: g                     # TODO: g | m/s2
+  gyr_unit: dps                   # TODO: dps | rad/s
+  column_map: {}                  # TODO falls Auto-Erkennung scheitert, z. B. {time: "Time", acc_x: "Ax", ...}
+  trim_s: 0.0                     # Clips: 0; kontinuierliche Trials: z. B. 1.0 (Übergänge abschneiden)
+  max_gap_s: 0.1
+  acc_range_g: 8                  # TODO: eingestellter AX6-Messbereich (für Clipping-Check)
+  gyr_range_dps: 2000
+windows:
+  length_s: 3.0                   # 2–4 s sinnvoll für Gehen (2–3 Doppelschritte)
+  step_s: 1.5
+  gap_s: 3.0                      # >= Fensterlänge
+split:
+  primary: auto
+  n_blocks: 5                     # TODO: an Anzahl Clips pro Trial anpassen (<= Clips pro Trial)
+  gap_clips: 0                    # 1 setzen, falls Clips sich überlappen UND nur relative Zeitstempel haben
+experiments:
+  main_activity: Gehen            # TODO: exakt wie im Manifest geschrieben
+  E7_n_permutations: 100
+results_dir: results
