@@ -1,6 +1,0 @@
-fold,protocol,n_train_win,n_test_win,n_test_units,trials_in_both,overlapping_pairs,min_gap_s,ok
-block1,block,450,125,25,25,0,4.0,True
-block2,block,400,125,25,25,0,4.0,True
-block3,block,400,125,25,25,0,4.0,True
-block4,block,400,125,25,25,0,4.0,True
-block5,block,450,125,25,25,0,4.0,True

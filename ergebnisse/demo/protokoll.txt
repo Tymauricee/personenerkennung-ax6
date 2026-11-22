@@ -1,0 +1,23 @@
+Lauf: 2026-11-22 14:18   Daten: data_demo
+60 Trials, 15 Personen, 300 Clips, 1347 Fenster, 192 Merkmale
+Sensoren: ['ax6-ankle-right', 'ax6-hip', 'ax6-wrist-left', 'ax6-wrist-right']
+fs=50 Hz, Fenster=3.0 s, Schritt=1.5 s, Gap=3.0 s, Clips pro Trial=5, Rand=1.0 s, Seed=42
+
+Fenster pro Person und Aktivität:
+aktivitaet  jumping-jacks  squats  stairs  walking
+person                                            
+P01                    20      20      20       30
+P02                    20      20      20       27
+P03                    20      20      20       30
+P04                    20      20      20       30
+P05                    20      20      20       30
+P06                    20      20      20       30
+P07                    20      20      20       30
+P08                    20      20      20       30
+P09                    20      20      20       30
+P10                    20      20      20       30
+P11                    20      20      20       30
+P12                    20      20      20       30
+P13                    20      20      20       30
+P14                    20      20      20       30
+P15                    20      20      20       30

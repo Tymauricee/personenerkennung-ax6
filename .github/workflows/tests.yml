@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Abhängigkeiten (ohne Deep-Learning-Backends)
-        run: pip install numpy scipy pandas scikit-learn matplotlib pyyaml pytest
-      - name: Tests (Leakage-Freiheit der Splits, Features, Loader)
-        run: pytest -q tests
+      - name: Pakete installieren
+        run: pip install numpy scipy pandas scikit-learn matplotlib pytest
+      - name: Tests (Laden, Fenster, Leakage-Freiheit der Splits, Merkmale)
+        run: pytest -q

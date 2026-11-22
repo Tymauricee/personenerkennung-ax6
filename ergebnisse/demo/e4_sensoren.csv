@@ -1,0 +1,6 @@
+sensoren,f1_fenster_mittel,f1_clip_mittel,acc_clip_mittel,f1_fenster_sd,f1_clip_sd,acc_clip_sd
+ax6-ankle-right,0.935,0.952,0.96,0.102,0.107,0.089
+ax6-hip,0.933,0.953,0.96,0.138,0.104,0.089
+ax6-wrist-left,0.933,0.947,0.96,0.113,0.119,0.089
+ax6-wrist-right,0.921,0.933,0.947,0.134,0.149,0.119
+alle zusammen,0.964,0.964,0.973,0.08,0.08,0.06

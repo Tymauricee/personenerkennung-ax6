@@ -1,14 +1,26 @@
-# Beiträge (Einzelleistungen nach § 18d Abs. 3 PO)
+# Wer macht was
 
-Jede Aufgabe hat genau eine verantwortliche Person (Kanban-Issue zugewiesen, Commits über den eigenen Account).
+Die Prüfungsordnung verlangt bei Gruppenprüfungen, dass die Einzelleistungen „eindeutig erkennbar,
+gekennzeichnet und separat bewertbar“ sind (§ 18d Abs. 3). Deshalb hat jeder Teil eine verantwortliche
+Person. Erklären können müssen trotzdem beide alles.
 
-| Bereich | Verantwortlich | Review | Issues / Commits |
+Vorschlag für die Aufteilung (anpassen, Namen eintragen):
+
+| Bereich | Verantwortlich | Inhalt |
+|---|---|---|
+| Daten und Vorverarbeitung | _Name A_ | `laden.py`: Dateien, Qualitätsbericht, Synchronisation; Trialdauern und Einheiten der echten Daten prüfen |
+| Fenster und Splits | _Name A_ | `fenster.py`: Clips, Fenster, Block-Split mit Gap, Cross-Activity, Leakage-Prüfung; E2 |
+| Merkmale und Modelle | _Name B_ | `merkmale.py`, `modelle.py`: Merkmale, Modelle, Clip-Entscheidung, Bewertung; E1 |
+| Kontrollen | _Name B_ | E3 (Lage-Test), E4 (Sensorpositionen) |
+| Interpretation und Grenzen | beide | Session-Risiko, Diskussion, Poster |
+| Datensatz-Mitarbeit (30 %) | jeweils eigene Aufgaben | im Kurs-Repo als Issues mit eigenem Namen |
+
+## Eigene Erweiterungen
+
+Hier eintragen, was ihr selbst ergänzt, geändert oder entschieden habt, mit Datum und Commit.
+Beispiele: Parameter nach Sichtung der echten Daten festgelegt (Begründung), Fensterlänge verglichen,
+zweiter Messtag für einen Cross-Session-Test, 1D-CNN aus der Pipeline ergänzt.
+
+| Datum | Wer | Was und warum | Commit |
 |---|---|---|---|
-| Manifest, Laden, QC, Geräte-Check (E0) | A | B | |
-| Features + klassische Modelle (E1), Sensorposition (E2) | A | B | |
-| MiniRocket, 1D-CNN (E1), Datenmenge (E4) | B | A | |
-| Validitätsleiter (E5), Statistik (E7) | A | B | |
-| Shortcut-Diagnostik (E6), Aktivitäten (E3), Erklärbarkeit (E8) | B | A | |
-| Poster: Methoden, FF2 | A | B | |
-| Poster: Ergebnisse, FF3, Diskussion | B | A | |
-| Forschungsfragen, Interpretation, Fazit | A + B | – | |
+| | | | |

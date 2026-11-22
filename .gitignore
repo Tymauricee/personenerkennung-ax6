@@ -1,29 +1,25 @@
-# ---- Messdaten NIE committen: pseudonymisiert, aber personenbezogen (ggf. biometrisch) ----
+# ---- Messdaten NIE committen: pseudonymisiert, aber personenbezogen (Gang kann biometrisch sein) ----
 data/
 *.cwa
 *.cwa.gz
-data_synth/
+data_demo/
 
-# ---- erzeugte Dateien ----
-cache/
-results/*
-!results/demo_synth/
+# ---- Ergebnisse auf echten Daten bleiben lokal; nur die Demo-Ergebnisse liegen im Repo ----
+ergebnisse/*
+!ergebnisse/demo/
+
+# ---- trainierte Identifikationsmodelle nicht veröffentlichen ----
+*.pkl
+*.joblib
+
+# ---- erzeugte Dateien und Umgebung ----
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ipynb_checkpoints/
-
-# ---- Umgebung ----
 .venv/
 venv/
 .env
 .DS_Store
 .idea/
 .vscode/
-
-# ---- trainierte Identifikationsmodelle nicht veröffentlichen (Datenschutz/Ethik) ----
-*.pkl
-*.joblib
-*.keras
-*.h5
-*.pt
