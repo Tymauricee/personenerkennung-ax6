@@ -1,0 +1,7 @@
+merkmale,split,anzahl,f1_fenster_mittel,f1_clip_mittel,acc_clip_mittel,f1_fenster_sd,f1_clip_sd,acc_clip_sd
+alle,Block mit Gap,192,0.964,0.964,0.973,0.08,0.08,0.06
+alle,andere Aktivitäten -> Gehen,192,0.437,0.451,0.52,,,
+nur_mittelwerte,Block mit Gap,24,1.0,1.0,1.0,0.0,0.0,0.0
+nur_mittelwerte,andere Aktivitäten -> Gehen,24,0.204,0.22,0.32,,,
+nur_betraege,Block mit Gap,48,0.647,0.802,0.84,0.156,0.207,0.167
+nur_betraege,andere Aktivitäten -> Gehen,48,0.511,0.649,0.667,,,

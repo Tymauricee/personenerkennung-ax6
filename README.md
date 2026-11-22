@@ -1,181 +1,107 @@
-# Personenerkennung aus Wearable-Bewegungsdaten (AX6, 4 Sensoren)
+# Personenerkennung aus AX6-Bewegungsdaten
 
-**PF 1.5 Digital Health – Data Science & AI Project · HSD** · Forschungsdesign: [`docs/FORSCHUNGSDESIGN.md`](docs/FORSCHUNGSDESIGN.md)
+**PF 1.5 Digital Health: Data Science & AI Project · Hochschule Düsseldorf**
+Team: _Name A_, _Name B_ (siehe [`CONTRIBUTIONS.md`](CONTRIBUTIONS.md))
 
-Aufgabe: Ein Modell bekommt einen **Clip** einer Aktivität (z. B. Gehen, 4 IMUs: S01 rechte Hand,
-S02 linke Hand, S05 Rumpf, S06 Bein) und sagt, **welche der N bekannten Personen** ihn aufgenommen
-hat (Closed-Set-Identifikation, pseudonymisierte IDs).
+**Forschungsfrage.** Lässt sich aus einem Gehen-Clip (vier Sensoren: beide Handgelenke, Hüfte, Bein)
+erkennen, welche der rund 25 bekannten Personen geht? Und wie viel davon ist wirklich die Person,
+wie viel nur die Wiedererkennung derselben Aufnahme oder desselben Sensorsitzes?
 
-Die Pipeline ist auf eure Datenstruktur zugeschnitten: **≈25 Personen, alles an einem Tag,
-1 Trial pro Aktivität, der in mehrere Clips zerlegt ist**. Genau diese Struktur macht die
-Auswertung heikel. Deshalb steht hier nicht die höchste Accuracy im Mittelpunkt, sondern eine
-**ehrliche Evaluation**.
+Das ist die explorative Personenerkennung aus Abschnitt 7 der Projektpipeline des Kurses: eine
+Machbarkeitsstudie mit pseudonymisierten IDs, kein Identitäts- oder Sicherheitssystem.
 
----
+## Vorgehen
 
-## Kernidee: die Validitätsleiter
+Der Code folgt Schritt für Schritt der Projektpipeline des Kurses.
 
-| Stufe | Protokoll | Was es beweist |
+| Schritt | Pipeline-Abschnitt | Datei |
 |---|---|---|
-| ✗ | Random-Fenster / Random-Clips | nichts: überlappende oder benachbarte Rohdaten liegen in Train **und** Test (Leakage) |
-| 1 | **Block-Split mit Gap** innerhalb des Trials | Die *Aufnahme* wird wiedererkannt. Person und Aufnahme sind bei 1 Trial pro Person nicht trennbar. |
-| 2 | **Cross-Activity** (Train: andere Aktivitäten → Test: Gehen) | Die Signatur überträgt sich auf eine *neue Aufnahme* desselben Tages. Sensorsitz und Tagesform können aber noch helfen. |
-| 3 | **Cross-Session** (Train Tag 1 → Test Tag 2) | echte Wiedererkennung der *Person*. Dafür ist ein kleines Retest-Subset nötig. |
+| Dateien nach Namenskonvention finden, Qualitätsbericht | 3 | `laden.py` |
+| Sensoren synchronisieren (50 Hz, Tiefpass, Lücken bleiben Lücken) | 4 | `laden.py` |
+| Trial in 5 Clips, Clips in Fenster (3 s, 50 % Überlappung) | 8 | `fenster.py` |
+| Block-Split mit 3 s Gap, Cross-Activity-Split, Leakage-Prüfung | 7, 8 | `fenster.py` |
+| Merkmale: mean, std, min, max, rms, energie pro Achse und Betrag | 5 | `merkmale.py` |
+| Modelle, Clip-Entscheidung, Macro-F1 (Mittelwert ± SD über Folds) | 5, 7 | `modelle.py` |
+| Experimente E1 bis E4, Tabellen und Grafiken | 9 | `experimente.py` |
 
-Dazu kommen **Shortcut-Kontrollen**:
-- *Static-Probe*: Ein Modell nur auf Achsen-Mittelwerten erfasst Sensorsitz, Haltung und Gerät.
-- *Rotationsinvariante Features*: Diese hängen nicht davon ab, wie der Sensor gedreht sitzt.
-- *Permutationstest auf Trial-Ebene*: Er zeigt, ob ein Protokoll Personen oder nur Aufnahmen misst.
+Alle Einstellungen (Fensterlänge, Gap, Anzahl Clips …) stehen in [`config.py`](config.py).
 
 ## Schnellstart
 
 ```bash
 git clone https://github.com/Tymauricee/personenerkennung-ax6
 cd personenerkennung-ax6
-pip install -r requirements.txt          # Keras braucht EIN Backend: torch, tensorflow oder jax
-python -m pytest -q tests                # 13 Tests, u. a. Leakage-Freiheit aller Splits
+pip install -r requirements.txt
 
-# Demo mit synthetischen Daten (gleiche Struktur wie euer Datensatz, KEINE echten Ergebnisse!)
-python scripts/make_synthetic_data.py --out data_synth
-python scripts/run_experiments.py --config configs/synth.yaml            # alles, ca. 20 min auf 2 CPU-Kernen
-python scripts/run_experiments.py --config configs/synth.yaml --quick    # schneller Testlauf
+python beispieldaten.py          # künstliche Testdaten im Format des Kurs-Datensatzes
+python experimente.py --demo     # alle Experimente auf den Testdaten, etwa 1 Minute
+pytest                           # automatische Prüfungen, u. a. kein Data Leakage
+jupyter lab lernen.ipynb         # der ganze Weg Schritt für Schritt, mit Kontrollfragen
 ```
 
-Ergebnisse landen unter `results/<lauf>/`: pro Experiment CSV und PNG, dazu `REPORT.md` (Zusammenfassung),
-`summary.json`, `config_used.yaml` und `environment.json`.
-
-## Eigene Daten anbinden (3 Schritte)
-
-**1. Manifest erstellen.** Liegen eure Dateien nach der **Namenskonvention des Kurs-Repos** vor
-(`20261117_P03_HAR-walking_T01_ax6-ankle-right_imu_proc.csv`, siehe `docs/naming_convention.md` im Repo
-ZDDduesseldorf/human_activity_recognition_zdd2026), reicht ein Befehl:
-
-```bash
-python scripts/build_manifest.py --convention --root data --out data/manifest.csv \
-    --stage proc --devices ax6 --log data/metadata/<zentrales_log>.csv
-```
-
-- **Datum → Session.** Nehmt ihr Personen an einem zweiten Tag erneut auf, entsteht automatisch der Cross-Session-Test.
-- **Position → Sensor-Name** (`wrist-right`, `hip`, …). Getrennte `acc`- und `gyr`-Dateien (z. B. Mbient) werden beim Laden zusammengeführt.
-- **`--log`** übernimmt die Sensor-ID (Seriennummer → `device_id`, für den Geräte-Check) und schließt Trials aus,
-  die im Log als ungültig markiert sind.
-
-Für jedes andere Schema schreibt ihr eine CSV mit einer Zeile pro (Trial bzw. Clip) × Sensor
-(oder ihr baut sie mit `--pattern`, Regex-Beispiel in `scripts/build_manifest.py`):
-
-```
-path,person,session,activity,trial,sensor,channel,clip,start_s,end_s,device_id
-data/P01_walking_S01.csv,P01,S1,walking,T1,S01,imu,C01,0.0,10.0,AX6-03
-data/P01_walking_S01.csv,P01,S1,walking,T1,S01,imu,C02,10.0,20.0,AX6-03
-...
-```
-
-- `channel`, `clip`, `start_s` und `end_s` sind optional. Sind eure Clips **eigene Dateien**, lasst `start_s`/`end_s` weg.
-  Schneidet ihr Clips aus einer längeren Datei, tragt die Grenzen in deren Zeitbasis ein.
-- **`device_id` unbedingt ausfüllen.** Daraus prüft E0, ob Geräte mit Personen konfundiert sind (siehe unten).
-
-**2. Config anpassen:** `configs/ax6_beta.yaml` kopieren und alle `TODO` prüfen
-(Einheiten g vs. m/s² und °/s vs. rad/s, Spaltennamen, Messbereich). Voreingestellt sind `sensors: auto`
-(alle Positionen aus dem Manifest) und `main_activity: walking`.
-Spalten werden automatisch erkannt (`time`, `acc_x` … `gyr_z`, auch `Accel-X (g)`, `gx` u. ä.).
-Falls nicht, hilft `data.column_map`.
-
-**3. Zuerst nur Inventar und QC laufen lassen**, dann alles:
-
-```bash
-python scripts/run_experiments.py --config configs/ax6_beta.yaml --only E0
-# -> results/<lauf>/E0_inventar/qc_flagged.csv, coverage.png, device_check.csv, load_log.csv ansehen!
-python scripts/run_experiments.py --config configs/ax6_beta.yaml
-```
-
-> **Clip-Zeitstempel:** Haben Clips absolute Zeitstempel, ordnet die Pipeline sie über die Zeit
-> an. Auch überlappende Clips werden dabei korrekt behandelt. Beginnen alle Clips eines Trials bei ~0
-> (relative Zeit), wird die Reihenfolge aus der Clip-ID abgeleitet (Warnung in `load_log.csv`), und
-> Nachbarclips des Testblocks werden zusätzlich ausgeschlossen.
-
-## Pipeline
-
-```
-Manifest ─► Dateien lesen + QC ─► Einheiten (g, °/s) ─► Sync aller Sensoren (Anti-Aliasing, 50 Hz, Lücken = NaN)
-        ─► SPLIT AUF ROHDATEN-EBENE (Block+Gap / Cross-Activity / Cross-Session)
-        ─► erst JETZT Fenster (3 s, 50 % Überlappung, nur innerhalb der Split-Teile)
-        ─► Features (basic | extended | invariant | static)  oder  Rohfenster (MiniRocket, 1D-CNN)
-        ─► Modell (fit nur auf Train; Skalierung im Modell)  ─► Fenster-Wahrscheinlichkeiten
-        ─► Aggregation pro Clip (Mittel der Log-Wahrscheinlichkeiten)  ─► Metriken + KIs + Leakage-Check
-```
-
-**Leakage-Regeln** (aus eurer Projektpipeline, Abschnitte 7–8), alle im Code umgesetzt:
-
-1. Erst die Rohdaten zeitlich in Train und Test trennen, **dann** Fenster bilden (`splits.py`, `windows.py`).
-2. Gap ≥ 1 Fensterlänge zwischen Train- und Testdaten (`windows.gap_s`, wird automatisch auf ≥ Fensterlänge gesetzt).
-3. Skalierung und lernende Transformationen nur auf Trainingsdaten (sklearn-Pipelines, `ChannelScaler`).
-4. **Automatischer Leakage-Check** für jede Fold (`check_leakage`): Er zählt überlappende Train/Test-Fensterpaare und
-   misst den minimalen zeitlichen Abstand. Das Ergebnis steht in jeder Ergebnistabelle (`leakage_ok`) und in `E0_inventar/leakage_check_*.csv`.
-5. Anzahl Fenster ≠ Anzahl unabhängiger Messungen: Bootstrap-KIs ziehen deshalb **Personen**, nicht Fenster.
+**Echte Daten:** proc-Dateien aus dem Kurs-Datensatz nach `data/processed/` legen (der Ordner wird nie
+committet) und `python experimente.py` starten. Ergebnisse landen in `ergebnisse/echt/` und bleiben lokal.
+Vorher prüfen: Trialdauer (reicht sie für 5 Clips mit Fenstern?), Spaltennamen, Einheiten. Erst
+`qualitaet.csv` ansehen, dann die Ergebnisse.
 
 ## Experimente
 
-| | Frage | Ausgabe (Poster-Kandidaten fett) |
+| | Frage | Ergebnis |
 |---|---|---|
-| E0 | Was ist im Datensatz? Gibt es Lücken, Einheitenfehler, Geräte-Confounds? | `coverage.png`, `qc_flagged.csv`, `device_check.csv`, **`split_schema.png`** |
-| E1 | Welches Modell erkennt Personen am besten (gleiche Folds)? | **`E1_clip_accuracy.png`**, `E1_window_macroF1.png`, Konfusionsmatrix |
-| E2 | Welche Sensorposition trägt die meiste Identität, je Aktivität? | **`E2_sensor_x_activity.png`** |
-| E3 | Welche Aktivität ist am personenspezifischsten? Überträgt sich die Identität (Train A → Test B)? | **`E3_per_activity.png`**, `E3_transfer.png` |
-| E4 | Wie viele Sekunden braucht man (je Protokoll)? Welche Fensterlänge? | **`E4_evidence.png`**, `E4_window_length.png` |
-| E5 | Wie stark überschätzen naive Splits die Leistung? | **`E5_validity_ladder.png`** |
-| E6 | Lernt das Modell die Person oder den Sensorsitz? | **`E6_shortcut_probe.png`**, `E6_tsne_invariant.png` |
-| E7 | Ist das Ergebnis mehr als Aufnahme-Wiedererkennung? | **`E7_permutation.png`** |
-| E8 | Welche Sensor- und Merkmalsgruppen tragen die Identität? | `E8_group_importance.png`, `E8_top20_mdi.png` |
+| E1 | Welches Modell erkennt Personen am besten? Mehrheits-Baseline, Entscheidungsbaum, KNN, SVM, Random Forest; nur Gehen und alle Aktivitäten | `e1_modelle.png`, `e1_confusion_rf.png`, `e1_pro_person_rf.csv` |
+| E2 | Wie stark hängt das Ergebnis vom Split ab? Zufällige Fenster (falsch), Block ohne Gap, Block mit Gap, andere Aktivitäten → Gehen | `e2_splits.png` |
+| E3 | Person oder Sensorsitz? Alle Merkmale, nur Achsen-Mittelwerte, nur Beträge | `e3_merkmale.png` |
+| E4 | Welche Sensorposition verrät die Person am besten? | `e4_sensoren.png` |
 
-**Modelle (E1):** Mehrheits- und Zufalls-Baseline, Decision Tree, KNN, SVM (RBF), Random Forest
-(Features), **MiniRocket** (Dempster et al., KDD 2021; aeon) und ein **1D-CNN** (Keras 3, backend-agnostisch)
-mit Rotations-Augmentation. Alle Modelle laufen auf denselben Folds. Die Hyperparameter sind a priori fest
-(kein Tuning auf Testdaten). Wer tunen will, braucht eine innere, ebenfalls gruppierte CV.
+Ein Beispiellauf auf den künstlichen Daten liegt in [`ergebnisse/demo/`](ergebnisse/demo/).
+**Diese Zahlen sagen nichts über echte Personenerkennung**, sie zeigen nur, dass der Code läuft.
 
-**Metriken:** Accuracy und Macro-F1 auf Fenster- und Clip-Ebene, Balanced Accuracy und Top-3.
-Berichtet werden Mittelwert ± SD über Folds (Projektpipeline) und gepoolte Werte mit 95 %-Cluster-Bootstrap-KI.
+## Wichtigste Einschränkung: das Session-Risiko
 
-## Wie man die Ergebnisse liest
+Pro Person gibt es eine Aufnahme pro Aktivität, alle am selben Tag. Training und Test stammen deshalb
+aus derselben Aufnahme. Ein Modell kann Personen dann auch am Sensorsitz, am Gerät oder an der Tagesform
+unterscheiden statt am Gang (Pipeline, Abschnitt 7). Zwei Kontrollen machen das sichtbar:
 
-- **Block-Split ≈ 100 %** heißt noch nicht „Personenerkennung funktioniert“. Es heißt nur, dass Clips derselben Aufnahme
-  wiedererkannt werden. Bei 1 Trial pro Person ist das die Obergrenze, nicht der Beweis.
-- **Static-Probe hoch** (vor allem bei Cross-Activity): Das Modell kann den *Sensorsitz* bzw. das *Gerät* nutzen.
-  Rotationsinvariante Features sind dann die ehrlichere Variante.
-- **Permutationstest:** Die Personen-Labels werden zwischen Aufnahmen vertauscht. Bleibt die Accuracy hoch (p ≈ 1),
-  misst das Protokoll nur Aufnahme-Identität. Fällt sie auf Zufallsniveau, steckt personenbezogene Information drin.
-- **Geräte-Check (E0):** Trägt jede Person eine *eigene* Kombination von AX6-Geräten (7 Geräte × 4 Positionen), können
-  geräteeigene Offsets und Biases die Person verraten. Am besten nutzt jede Position immer dasselbe Gerät.
+- **Cross-Activity (E2, E3):** Training auf anderen Aktivitäten, Test auf Gehen. Das ist eine andere
+  Aufnahme, aber derselbe Tag und derselbe Sensorsitz.
+- **Lage-Test (E3):** Die Mittelwerte der Achsen hängen vor allem davon ab, wie der Sensor gedreht sitzt.
+  Erkennt ein Modell die Personen schon damit, ist der Sensorsitz eine Abkürzung. Die Beträge
+  (|a| = Wurzel aus x² + y² + z²) hängen dagegen nicht von der Drehung ab.
 
-## Reproduzierbarkeit
+Echte Personenerkennung über Tage hinweg ließe sich erst mit einer zweiten Messung an einem anderen Tag prüfen.
 
-Feste Seeds, `config_used.yaml` und `environment.json` pro Lauf, ein Cache für geladene Daten (`cache/`) und Tests
-für die Split-Logik. Hinweis: Einige Abschnitte nutzen parallele Bäume (`n_jobs`). Für bitgenaue Wiederholung `n_jobs: 1` setzen.
+## Datenschutz
+
+> **Dieses Repository ist öffentlich.** Niemals Messdaten (auch keine proc-Dateien), das zentrale Log
+> oder trainierte Modelle committen. `data/`, `ergebnisse/echt/` und Modelldateien stehen deshalb in
+> der `.gitignore`. Das Notebook nach einem Lauf mit echten Daten nur ohne Ausgaben committen.
+
+Gangdaten können biometrische Daten sein (DSGVO Art. 4 Nr. 14, bei Verarbeitung zur eindeutigen
+Identifizierung Art. 9). Deshalb: nur pseudonymisierte IDs, Personenerkennung nur im Rahmen von
+Projektfreigabe und Einwilligung (Pipeline, Abschnitt 10).
 
 ## Projektstruktur
 
 ```
-personid/      io.py · convention.py · synth.py · inventory.py · windows.py · splits.py · features.py
-               models.py · evaluate.py · plots.py · experiments.py · config.py
-configs/       synth.yaml (Demo) · ax6_beta.yaml (Vorlage für eure Daten)
-scripts/       make_synthetic_data.py · build_manifest.py · run_experiments.py
-tests/         test_core.py (13 Tests, laufen per GitHub Actions bei jedem Push)
-results/       demo_synth/ – kompletter Beispiellauf auf synthetischen Daten (REPORT.md + Abbildungen)
-docs/          split_schema.png (Poster-Abbildung)
+config.py            alle Einstellungen
+laden.py             Dateien finden, lesen, Qualitätsbericht, synchronisieren
+fenster.py           Clips, Fenster, Block-Split, Cross-Activity-Split, Leakage-Prüfung
+merkmale.py          Merkmale pro Fenster
+modelle.py           Modelle, Clip-Entscheidung, Bewertung
+experimente.py       E1 bis E4
+beispieldaten.py     künstliche Testdaten
+lernen.ipynb         Lernpfad mit Kontrollfragen
+tests/               automatische Prüfungen (laufen bei jedem Push auf GitHub)
+docs/FACHGESPRAECH.md   typische Fragen im Fachgespräch mit Kernpunkten und Code-Stellen
+ergebnisse/demo/     Beispiellauf auf künstlichen Daten
 ```
 
-## Grenzen (ins Poster schreiben)
+## Entstehung und KI-Nutzung
 
-- 1 Session pro Person: Ohne Retest lässt sich nur Wiedererkennung innerhalb eines Tages zeigen (Session-Risiko).
-- Etwa 25 Personen, kurze Trials: KIs berichten, keine Überinterpretation kleiner Unterschiede zwischen Modellen.
-- Closed-Set: Das Modell kennt nur die Trainingspersonen. Es ist kein Identitäts- oder Sicherheitssystem.
-- Synthetische Demo-Daten testen nur den Code. Ihre Zahlen sind **keine** Befunde.
+Der Code wurde mit Unterstützung des KI-Assistenten Claude (Anthropic) erstellt. Commits mit
+KI-Beteiligung sind in der Git-Historie mit „Co-Authored-By: Claude“ gekennzeichnet. Eine erste,
+deutlich umfangreichere Fassung liegt im Branch `archiv/framework-v1`. Die aktuelle Fassung ist auf
+die Methoden der Projektpipeline reduziert.
 
-## Datenschutz
-
-> **Dieses Repository ist öffentlich.** Niemals Messdaten (auch keine `proc`-Dateien), zentrale Logs oder
-> trainierte Modelle committen. `data/`, `*.cwa` und Modelldateien stehen deshalb in der `.gitignore`.
-
-Gangdaten können als biometrische Daten gelten (DSGVO Art. 4 Nr. 14; bei Verarbeitung zur eindeutigen Identifizierung
-besondere Kategorie nach Art. 9). Deshalb gilt: nur pseudonymisierte IDs, keine Klarnamen in Code, Logs oder Grafiken,
-Personenerkennung nur im Rahmen von Projektfreigabe und Einwilligung, und keine trainierten Identifikationsmodelle
-weitergeben.
+_TODO Team: nach Rücksprache mit der Prüferin bzw. dem Prüfer ergänzen, in der dort gewünschten Form:
+wofür ihr KI genutzt habt und was ihr selbst gemacht, geprüft und entschieden habt._

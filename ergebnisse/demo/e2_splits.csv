@@ -1,0 +1,5 @@
+split,kleinster_abstand_s,f1_fenster_mittel,f1_clip_mittel,acc_clip_mittel,f1_fenster_sd,f1_clip_sd,acc_clip_sd
+Zufällige Fenster (falsch),-1.5,1.0,1.0,1.0,0.0,0.0,0.0
+Block ohne Gap,1.04,0.99,0.982,0.987,0.023,0.04,0.03
+Block mit Gap,4.04,0.964,0.964,0.973,0.08,0.08,0.06
+andere Aktivitäten -> Gehen,inf,0.437,0.451,0.52,,,
